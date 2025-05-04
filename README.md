@@ -8,6 +8,12 @@ Biblioteca de infraestrutura Go para monitoramento e observabilidade, com foco i
 go get github.com/iamviniciuss/observability_go
 ```
 
+Para usar uma versão específica:
+
+```bash
+go get github.com/iamviniciuss/observability_go@v1.0.0
+```
+
 ## Uso básico
 
 ### Medir tempo de execução de uma função
@@ -79,9 +85,26 @@ func minhaFuncao() {
 
 Veja exemplos completos no diretório [examples](./examples).
 
+## Versionamento
+
+Este projeto segue [Versionamento Semântico 2.0.0](https://semver.org/lang/pt-BR/):
+
+- **MAJOR**: Alterações incompatíveis com versões anteriores
+- **MINOR**: Adição de funcionalidades mantendo compatibilidade
+- **PATCH**: Correções de bugs mantendo compatibilidade
+
+Para mais informações sobre o processo de versionamento, consulte o [guia de versionamento](./docs/guides/versioning.md).
+
 ## Contribuindo
 
 Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou pull requests.
+
+Para contribuir com o projeto:
+
+1. Faça um fork do repositório
+2. Crie uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
+3. Faça commit das suas alterações seguindo [Conventional Commits](https://www.conventionalcommits.org/pt-br/)
+4. Envie um pull request
 
 ## Roadmap
 
