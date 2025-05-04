@@ -2,7 +2,8 @@
 package timer
 
 import (
-"time"
+	"fmt"
+	"time"
 )
 
 // TimeFunc executa a função fornecida e retorna o resultado e a duração da execução
@@ -33,9 +34,10 @@ func WithTiming[T any](fn func() T, callback func(time.Duration)) func() T {
 // MeasureTime é uma utility para medir o tempo de execução de um bloco de código
 // Exemplo de uso:
 //
-/defer timer.MeasureTime("operacao")()/
+//	defer timer.MeasureTime("operacao")()
 func MeasureTime(operation string) func() {
 	start := time.Now()
+	fmt.Printf("⏱️ Iniciando medição: %s\n", operation)
 	return func() {
 		duration := time.Since(start)
 		// Por padrão, apenas imprime no log
