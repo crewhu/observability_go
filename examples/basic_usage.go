@@ -1,10 +1,10 @@
 package main
 
 import (
-"fmt"
-"time"
+	"fmt"
+	"time"
 
-"github.com/iamviniciuss/observability_go/pkg/timer"
+	"github.com/iamviniciuss/observability_go/pkg/timer"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 
 	// Exemplo 2: Usando WithTiming como decorator com callback
 	funcaoMedida := timer.WithTiming(
-func() int {
+		func() int {
 			// Simulando outro processamento
 			time.Sleep(200 * time.Millisecond)
 			return 42

@@ -1,8 +1,8 @@
 package timer
 
 import (
-"testing"
-"time"
+	"testing"
+	"time"
 )
 
 func TestTimeFunc(t *testing.T) {
@@ -32,25 +32,25 @@ func TestWithTiming(t *testing.T) {
 	// Configurando
 	sleepDuration := 50 * time.Millisecond
 	var medido time.Duration
-	
+
 	fn := func() int {
 		time.Sleep(sleepDuration)
 		return 42
 	}
-	
+
 	callback := func(d time.Duration) {
 		medido = d
 	}
-	
+
 	// Criando a função com medição
 	timedFn := WithTiming(fn, callback)
-	
+
 	// Executando e verificando resultado
 	resultado := timedFn()
 	if resultado != 42 {
 		t.Errorf("resultado esperado %d, obtido %d", 42, resultado)
 	}
-	
+
 	// Verificando se a duração foi registrada corretamente
 	if medido < sleepDuration {
 		t.Errorf("duracao menor que o esperado, esperado >= %v, obtido %v", sleepDuration, medido)
@@ -66,7 +66,7 @@ func TestMeasureTime(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		done <- true
 	}()
-	
+
 	select {
 	case <-done:
 		// Tudo certo, função executou sem pânico
@@ -78,7 +78,7 @@ func TestMeasureTime(t *testing.T) {
 // Benchmark para medir o overhead da instrumentação
 func BenchmarkTimeFunc(b *testing.B) {
 	fn := func() int { return 42 }
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = TimeFunc(fn)
@@ -89,7 +89,7 @@ func BenchmarkWithTiming(b *testing.B) {
 	fn := func() int { return 42 }
 	callback := func(d time.Duration) {}
 	timedFn := WithTiming(fn, callback)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = timedFn()

@@ -22,11 +22,11 @@ func WithTiming[T any](fn func() T, callback func(time.Duration)) func() T {
 		start := time.Now()
 		result := fn()
 		duration := time.Since(start)
-		
+
 		if callback != nil {
 			callback(duration)
 		}
-		
+
 		return result
 	}
 }
