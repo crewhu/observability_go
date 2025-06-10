@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+
+	otellog "go.opentelemetry.io/otel/log"
 )
 
 type (
@@ -32,6 +34,21 @@ func (l LogLevel) String() string {
 		return "DEBUG"
 	default:
 		return "UNKNOWN"
+	}
+}
+
+func (l LogLevel) OtelString() otellog.Severity {
+	switch l {
+	case LogLevelInfo:
+		return otellog.SeverityInfo
+	case LogLevelWarn:
+		return otellog.SeverityWarn
+	case LogLevelError:
+		return otellog.SeverityError
+	case LogLevelDebug:
+		return otellog.SeverityDebug
+	default:
+		return otellog.SeverityUndefined
 	}
 }
 
@@ -84,6 +101,18 @@ func printf(ctx context.Context, level LogLevel, t Tags, msg string, v ...any) {
 	}
 
 	ctxLogger.LogAttrs(ctx, slog.Level(level), formattedMsg)
+	otelPrintf(ctx, level, formattedMsg)
+}
+
+func otelPrintf(ctx context.Context, level LogLevel, msg string) {
+	if otelLogger == nil {
+		return
+	}
+
+	otelRecord := GetOtelLoggerFromContext(ctx)
+	otelRecord.SetBody(otellog.StringValue(msg))
+	otelRecord.SetSeverity(level.OtelString())
+	otelLogger.Emit(ctx, otelRecord)
 }
 
 func Err(ctx context.Context, err error, tags ...Tags) {

@@ -2,9 +2,12 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+
+	otellog "go.opentelemetry.io/otel/log"
 )
 
 func ConfigureLogger(level LogLevel) {
@@ -46,4 +49,31 @@ func GetLoggerFromContext(ctx context.Context) *slog.Logger {
 	}
 
 	return loggerWithTrace
+}
+
+func GetOtelLoggerFromContext(ctx context.Context) otellog.Record {
+	traceInfo := ExtractTraceInfo(ctx)
+	otelRecord := otellog.Record{}
+
+	if traceInfo.TraceID != "" {
+		otelRecord.AddAttributes(otellog.KeyValue{
+			Key:   "trace_id",
+			Value: otellog.StringValue(traceInfo.TraceID),
+		}, otellog.KeyValue{
+			Key:   "span_id",
+			Value: otellog.StringValue(traceInfo.SpanID),
+		})
+	}
+
+	ctxTags := getTags(ctx)
+	if len(ctxTags) > 0 {
+		for k, v := range ctxTags {
+			otelRecord.AddAttributes(otellog.KeyValue{
+				Key:   k,
+				Value: otellog.StringValue(fmt.Sprintf("%v", v)),
+			})
+		}
+	}
+
+	return otelRecord
 }
