@@ -1,4 +1,4 @@
-module github.com/iamviniciuss/observability_go
+module github.com/crewhu/observability_go
 
 go 1.23.0
 

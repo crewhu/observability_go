@@ -3,7 +3,7 @@ package tracing
 import (
 	"context"
 
-	"github.com/iamviniciuss/observability_go/pkg/logging"
+	"github.com/crewhu/observability_go/pkg/logging"
 	"go.opentelemetry.io/otel/trace"
 )
 

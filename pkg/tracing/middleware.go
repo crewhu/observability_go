@@ -4,8 +4,8 @@ import (
 	"context"
 	"log"
 
+	"github.com/crewhu/observability_go/pkg/logging"
 	"github.com/gofiber/fiber/v2"
-	"github.com/iamviniciuss/observability_go/pkg/logging"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )

@@ -5,13 +5,13 @@ Biblioteca de infraestrutura Go para monitoramento e observabilidade, com foco i
 ## Instalação
 
 ```bash
-go get github.com/iamviniciuss/observability_go
+go get github.com/crewhu/observability_go
 ```
 
 Para usar uma versão específica:
 
 ```bash
-go get github.com/iamviniciuss/observability_go@v1.0.0
+go get github.com/crewhu/observability_go@v1.0.0
 ```
 
 ## Uso básico
@@ -21,7 +21,7 @@ go get github.com/iamviniciuss/observability_go@v1.0.0
 ```go
 import (
     "fmt"
-    "github.com/iamviniciuss/observability_go/pkg/timer"
+    "github.com/crewhu/observability_go/pkg/timer"
 )
 
 func main() {
@@ -40,7 +40,7 @@ func main() {
 ```go
 import (
     "fmt"
-    "github.com/iamviniciuss/observability_go/pkg/timer"
+    "github.com/crewhu/observability_go/pkg/timer"
 )
 
 func main() {
@@ -63,7 +63,7 @@ func main() {
 ### Medir blocos de código específicos
 
 ```go
-import "github.com/iamviniciuss/observability_go/pkg/timer"
+import "github.com/crewhu/observability_go/pkg/timer"
 
 func minhaFuncao() {
     // Medir tempo do escopo inteiro
