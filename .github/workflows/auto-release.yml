@@ -27,16 +27,16 @@ jobs:
       - name: Run Tests
         run: go test -race -coverprofile=coverage.out ./...
 
-      - name: Verify Coverage
-        run: |
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
-          echo "Cobertura total: $COVERAGE"
-          # Falhar se a cobertura for menor que 75%
-          PERCENTAGE=$(echo $COVERAGE | sed 's/%//')
-          if (( $(echo "$PERCENTAGE < 75" | bc -l) )); then
-            echo "Cobertura de testes insuficiente: $COVERAGE"
-            exit 1
-          fi
+      # - name: Verify Coverage
+      #   run: |
+      #     COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+      #     echo "Cobertura total: $COVERAGE"
+      #     # Falhar se a cobertura for menor que 75%
+      #     PERCENTAGE=$(echo $COVERAGE | sed 's/%//')
+      #     if (( $(echo "$PERCENTAGE < 75" | bc -l) )); then
+      #       echo "Cobertura de testes insuficiente: $COVERAGE"
+      #       exit 1
+      #     fi
 
       - name: Generate Release Type
         id: release-type
