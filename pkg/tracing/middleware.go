@@ -4,13 +4,16 @@ import (
 	"context"
 
 	"github.com/gofiber/fiber/v2"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func TracingMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := SetTraceAtContext(c.UserContext())
-		spanCtx := trace.SpanContextFromContext(GetSpanContext(ctx))
+		otelCtx := GetSpanContext(ctx)
+
+		spanCtx := trace.SpanContextFromContext(otelCtx)
 
 		c.Locals("traceCtx", ctx)
 
@@ -19,9 +22,16 @@ func TracingMiddleware() fiber.Handler {
 			c.Set("X-Span-ID", spanCtx.SpanID().String())
 		}
 
-		err := c.Next()
+		_, span := GetTracer("fiber").Start(c.Context(), "middleware")
+		defer span.End()
 
-		return err
+		for key, value := range c.AllParams() {
+			span.SetAttributes(
+				attribute.String("http.query."+key, value),
+			)
+		}
+
+		return c.Next()
 	}
 }
 
