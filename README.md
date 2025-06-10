@@ -1,4 +1,4 @@
-# Observability Go
+# Crewhu Observability in Go
 
 Biblioteca de infraestrutura Go para monitoramento e observabilidade, com foco inicial em medir o tempo de execução de funções arbitrárias.
 
