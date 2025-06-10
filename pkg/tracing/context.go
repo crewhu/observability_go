@@ -7,9 +7,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+type contextKey string
+
 const (
-	traceIDKey = "trace-id"
-	spanIDKey  = "span-id"
+	traceIDKey contextKey = "trace-id"
+	spanIDKey  contextKey = "span-id"
 )
 
 func SetTraceAtContext(ctx context.Context) context.Context {

@@ -23,6 +23,10 @@ func InitLoggerCollector(name, endpoint string) (*sdklog.LoggerProvider, error) 
 		),
 	)
 
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log exporter: %w", err)
+	}
+
 	exporter, err := otlploghttp.New(
 		context.Background(),
 		otlploghttp.WithEndpoint(endpoint),
