@@ -1,6 +1,17 @@
-# Crewhu Observability in Go
+# Crewhu Observability Go
 
-Biblioteca de infraestrutura Go para monitoramento e observabilidade, com foco inicial em medir o tempo de execução de funções arbitrárias.
+Biblioteca de observabilidade para serviços Go da CrewHU, fornecendo instrumentação padronizada com OpenTelemetry para tracing distribuído e logging estruturado.
+
+## Visão Geral
+
+Esta biblioteca simplifica a implementação do OpenTelemetry em aplicações Go, permitindo monitorar e rastrear o comportamento dos serviços em ambientes de produção. Inicialmente focada em medição de tempo de execução, agora oferece recursos completos de tracing e logging.
+
+## Recursos
+
+- **Tracing distribuído**: Rastreamento de requisições através de múltiplos serviços
+- **Logging estruturado**: Logs padronizados e estruturados com contexto de tracing
+- **Instrumentação HTTP**: Suporte para instrumentação automática de APIs HTTP (com middleware para Fiber)
+- **Exportação via REST API**: Envio de telemetria via protocolo HTTP/OTLP
 
 ## Instalação
 
@@ -14,76 +25,147 @@ Para usar uma versão específica:
 go get github.com/crewhu/observability_go@v1.0.0
 ```
 
-## Uso básico
+## Configuração
 
-### Medir tempo de execução de uma função
+### Variáveis de Ambiente Necessárias
+
+Para utilizar a biblioteca, configure as seguintes variáveis de ambiente:
+
+- `OTEL_PROJECT_NAME`: Nome do projeto/serviço (usado como Service.Name nos dados de telemetria)
+- `OTEL_ENDPOINT`: Endpoint do coletor OpenTelemetry (ex: "http://otel-collector:4318")
+
+### Configuração em Arquivos
+
+#### Desenvolvimento (.env)
+
+```
+OTEL_PROJECT_NAME=meu-servico
+OTEL_ENDPOINT=http://localhost:4318
+```
+
+#### Produção (oni.yaml)
+
+```yaml
+env:
+  - name: OTEL_PROJECT_NAME
+    value: meu-servico
+  - name: OTEL_ENDPOINT
+    value: http://otel-collector:4318
+```
+
+## Uso Básico
+
+### Inicialização no main.go
 
 ```go
+package main
+
 import (
-    "fmt"
-    "github.com/crewhu/observability_go/pkg/timer"
+	"context"
+	"os"
+	
+	logging "github.com/crewhu/observability_go/pkg/logging"
+	tracing "github.com/crewhu/observability_go/pkg/tracing"
+	"go.opentelemetry.io/otel"
 )
 
 func main() {
-    // Medir tempo de execução de uma função
-    resultado, duracao := timer.TimeFunc(func() string {
-        // código a ser medido
-        return "resultado"
-    })
-    
-    fmt.Printf("Resultado: %s, Duração: %s\n", resultado, duracao)
+	ctx := context.Background()
+	
+	// Inicialização do logging
+	logging.SetLoggingLevel(logging.LogLevelInfo)
+	logging.InitLoggerCollector(os.Getenv("OTEL_PROJECT_NAME"), os.Getenv("OTEL_ENDPOINT"))
+	
+	// Inicialização do tracing
+	traceProvider, err := tracing.NewTracer(os.Getenv("OTEL_PROJECT_NAME"), os.Getenv("OTEL_ENDPOINT"))
+	if err != nil {
+		logging.Error(ctx, "erro ao inicializar tracer: %v", err)
+	}
+	defer traceProvider.Shutdown(ctx)
+	
+	// Configura o tracer global
+	otel.SetTracerProvider(traceProvider.GetProvider())
+	
+	// Resto da aplicação...
 }
 ```
 
-### Decorar uma função com medição de tempo
+### Middleware para Fiber HTTP
+
+Para instrumentar automaticamente rotas HTTP com o framework Fiber:
+
+```go
+package http
+
+import (
+	"github.com/gofiber/fiber/v2"
+	"github.com/crewhu/observability_go/pkg/tracing/middleware"
+)
+
+func NewFiberHttp() *fiber.App {
+	app := fiber.New()
+	
+	// Adiciona middleware de tracing
+	app.Use(middleware.OtelMiddleware())
+	
+	// Configurações adicionais do Fiber...
+	
+	return app
+}
+```
+
+### Registrando Logs
 
 ```go
 import (
-    "fmt"
-    "github.com/crewhu/observability_go/pkg/timer"
+	"context"
+	logging "github.com/crewhu/observability_go/pkg/logging"
 )
 
-func main() {
-    // Decorar função com medição de tempo e callback personalizado
-    funcaoMedida := timer.WithTiming(
-        func() int {
-            // código a ser medido
-            return 42
-        },
-        func(duracao time.Duration) {
-            fmt.Printf("Função executada em: %s\n", duracao)
-        },
+func minhaFuncao(ctx context.Context) {
+	// Diferentes níveis de log com contexto de tracing
+	logging.Debug(ctx, "Detalhes de debug: %s", "informação detalhada")
+	logging.Info(ctx, "Operação concluída com sucesso")
+	logging.Warn(ctx, "Atenção: recurso com utilização alta")
+	logging.Error(ctx, "Erro ao processar requisição: %v", err)
+}
+```
+
+## Exemplos de uso do Tracing
+
+### Criando spans, atributos e eventos
+
+```go
+import (
+    "context"
+    "github.com/crewhu/crewhu-trends-api/modules/analytics/src/infra/observability/tracing"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/trace"
+)
+
+func exemploDeTracing(ctx context.Context, companyID, dataSourceID string) {
+    // Inicia um novo span
+    _, span := tracing.GetTracer("ListAvailableMetricsBySource").Start(ctx, "ListAvailableMetricsBySource")
+    defer span.End()
+
+    // Adiciona atributos ao span
+    span.SetAttributes(
+        attribute.String("company_id", companyID),
+        attribute.String("data_source_id", dataSourceID),
     )
-    
-    resultado := funcaoMedida()
-    fmt.Printf("Resultado: %d\n", resultado)
+
+    // Adiciona um evento ao span
+    span.AddEvent("metrics-found", trace.WithAttributes(
+        attribute.String("list", "[lista de métricas aqui]"),
+    ))
+
+    // ... lógica da função ...
 }
 ```
 
-### Medir blocos de código específicos
+## Exemplo Completo de Integração
 
-```go
-import "github.com/crewhu/observability_go/pkg/timer"
-
-func minhaFuncao() {
-    // Medir tempo do escopo inteiro
-    defer timer.MeasureTime("operação completa")()
-    
-    // Código...
-    
-    {
-        // Medir tempo de um bloco específico
-        defer timer.MeasureTime("sub-operação")()
-        // Código do bloco
-    }
-    
-    // Mais código...
-}
-```
-
-## Exemplos
-
-Veja exemplos completos no diretório [examples](./examples).
+Veja um exemplo real de integração no repositório [crewhu-trends-api PR #323](https://github.com/crewhu/crewhu-trends-api/pull/323).
 
 ## Versionamento
 
@@ -95,24 +177,10 @@ Este projeto segue [Versionamento Semântico 2.0.0](https://semver.org/lang/pt-B
 
 Para mais informações sobre o processo de versionamento, consulte o [guia de versionamento](./docs/guides/versioning.md).
 
-## Contribuindo
+## Release Automatizada
 
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou pull requests.
+A biblioteca implementa um processo de CI/CD que analisa as mensagens de commit para determinar automaticamente o tipo de versão a ser lançada:
 
-Para contribuir com o projeto:
-
-1. Faça um fork do repositório
-2. Crie uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
-3. Faça commit das suas alterações seguindo [Conventional Commits](https://www.conventionalcommits.org/pt-br/)
-4. Envie um pull request
-
-## Roadmap
-
-1. ✅ Implementação básica (medição de tempo)
-2. ⬜ Integração com OpenTelemetry
-3. ⬜ Exportação de métricas
-4. ⬜ Rastreamento de contexto
-
-## Licença
-
-MIT
+- `feat(major):` ou mensagens com `BREAKING CHANGE` incrementam a versão MAJOR
+- `feat:` incrementa a versão MINOR
+- Outros tipos (`fix`, `docs`, etc.) incrementam a versão PATCH
