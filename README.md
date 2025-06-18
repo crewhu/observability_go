@@ -163,6 +163,29 @@ func exemploDeTracing(ctx context.Context, companyID, dataSourceID string) {
 }
 ```
 
+## Boas práticas para spans, atributos e eventos
+
+### Nome dos Spans
+- Use nomes descritivos e consistentes, preferencialmente no padrão `RecursoAção` (ex: `UserLogin`, `ListAvailableMetricsBySource`).
+- O nome do span deve indicar claramente a operação ou endpoint monitorado.
+- Para handlers HTTP, utilize o nome do caso de uso ou do controller.
+
+### Quando utilizar Atributos (`SetAttributes`)
+- Sempre que precisar registrar informações relevantes para análise e filtragem no trace.
+- Exemplos de atributos:
+  - IDs de entidades (`company_id`, `user_id`, `data_source_id`)
+  - Parâmetros de entrada relevantes
+  - Status ou resultado de operações
+- Prefira atributos para dados que mudam pouco durante o span e são úteis para busca/agrupamento.
+
+### Quando utilizar Eventos (`AddEvent`)
+- Use eventos para registrar fatos importantes ou marcos dentro do span.
+- Exemplos:
+  - Resultado de uma consulta ou processamento (`metrics-found`, `validation-error`)
+  - Mudanças de estado relevantes
+  - Erros ou exceções capturadas durante a execução
+- Eventos são ideais para registrar informações pontuais e detalhadas, que ajudam a entender o fluxo do span.
+
 ## Exemplo Completo de Integração
 
 Veja um exemplo real de integração no repositório [crewhu-trends-api PR #323](https://github.com/crewhu/crewhu-trends-api/pull/323).
