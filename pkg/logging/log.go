@@ -13,6 +13,12 @@ type (
 	LogLevel slog.Level
 )
 
+var app string
+func init() {
+	app = "None"
+	logger = slog.Default()
+}
+
 var (
 	logger *slog.Logger
 
@@ -73,7 +79,7 @@ func Log(ctx context.Context, level LogLevel, msg string, opts ...any) {
 			args = append(args, opt)
 		}
 	}
-	printf(ctx, level, tags, msg, args...)
+	printf(ctx,app, level, tags, msg, args...)
 }
 
 func Debug(ctx context.Context, msg string, opts ...any) {
@@ -92,7 +98,7 @@ func Error(ctx context.Context, msg string, opts ...any) {
 	Log(ctx, LogLevelError, msg, opts...)
 }
 
-func printf(ctx context.Context, level LogLevel, t Tags, msg string, v ...any) {
+func printf(ctx context.Context, app string, level LogLevel, t Tags, msg string, v ...any) {
 	ctxLogger := GetLoggerFromContext(ctx)
 
 	formattedMsg := msg
@@ -100,7 +106,7 @@ func printf(ctx context.Context, level LogLevel, t Tags, msg string, v ...any) {
 		formattedMsg = fmt.Sprintf(msg, v...)
 	}
 
-	ctxLogger.LogAttrs(ctx, slog.Level(level), formattedMsg)
+	ctxLogger.LogAttrs(ctx, slog.Level(level), fmt.Sprintf("app=%s - %s", app, formattedMsg))
 	otelPrintf(ctx, level, formattedMsg)
 }
 
@@ -122,5 +128,5 @@ func Err(ctx context.Context, err error, tags ...Tags) {
 		t = t.Merge(tag)
 	}
 	t = t.Merge(Tags{"error": true})
-	printf(ctx, LogLevelError, t, err.Error())
+	printf(ctx,app, LogLevelError, t, err.Error())
 }
