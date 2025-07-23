@@ -14,6 +14,7 @@ type (
 )
 
 var app string
+
 func init() {
 	app = "None"
 	logger = slog.Default()
@@ -80,7 +81,7 @@ func Log(ctx context.Context, level LogLevel, msg string, opts ...any) {
 			args = append(args, opt)
 		}
 	}
-	printf(ctx,app, level, tags, msg, args...)
+	printf(ctx, app, level, tags, msg, args...)
 }
 
 func Debug(ctx context.Context, msg string, opts ...any) {
@@ -129,5 +130,5 @@ func Err(ctx context.Context, err error, tags ...Tags) {
 		t = t.Merge(tag)
 	}
 	t = t.Merge(Tags{"error": true})
-	printf(ctx,app, LogLevelError, t, err.Error())
+	printf(ctx, app, LogLevelError, t, err.Error())
 }
