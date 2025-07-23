@@ -58,8 +58,9 @@ func (l LogLevel) OtelString() otellog.Severity {
 	}
 }
 
-func init() {
-	logger = slog.Default()
+func SetAppName(name string) {
+	app = name
+	slog.Info("Application name set", slog.String("app", app))
 }
 
 func SetLoggingLevel(level LogLevel) {
