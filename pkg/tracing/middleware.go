@@ -2,9 +2,7 @@ package tracing
 
 import (
 	"context"
-	"log"
 
-	"github.com/crewhu/observability_go/pkg/logging"
 	"github.com/gofiber/fiber/v2"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -54,12 +52,6 @@ func TracingMiddleware() fiber.Handler {
 		span.SetAttributes(
 			attribute.Int("http.query.items", items),
 		)
-
-		if span.SpanContext().TraceID().IsValid() {
-			log.Println("TraceID:", span.SpanContext().TraceID().String())
-		}
-
-		logging.Info(ctx, "URL: %s", c.OriginalURL())
 
 		return c.Next()
 	}
