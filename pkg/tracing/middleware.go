@@ -53,6 +53,8 @@ func TracingMiddleware() fiber.Handler {
 			attribute.Int("http.query.items", items),
 		)
 
+		c.Locals("traceCtx", otelCtx)
+
 		return c.Next()
 	}
 }
