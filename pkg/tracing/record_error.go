@@ -8,7 +8,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-
 func RecordCustomException(span trace.Span, name string, err error, options ...attribute.KeyValue) {
 	options = append(options, attribute.String("exception.type", name))
 	options = append(options, attribute.String("exception.message", err.Error()))
