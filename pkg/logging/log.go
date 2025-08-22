@@ -108,7 +108,7 @@ func printf(ctx context.Context, app string, level LogLevel, t Tags, msg string,
 		formattedMsg = fmt.Sprintf(msg, v...)
 	}
 
-	ctxLogger.LogAttrs(ctx, slog.Level(level), fmt.Sprintf("app=%s - %s", app, formattedMsg))
+	ctxLogger.LogAttrs(ctx, slog.Level(level), fmt.Sprintf("%s", app, formattedMsg))
 	otelPrintf(ctx, level, formattedMsg)
 }
 
