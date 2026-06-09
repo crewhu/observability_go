@@ -1,61 +1,19 @@
 # Crewhu Observability Go
 
-Biblioteca de observabilidade para serviços Go da CrewHU, fornecendo instrumentação padronizada com OpenTelemetry para tracing distribuído e logging estruturado.
+OpenTelemetry instrumentation library for Crewhu Go services. One `Init` call wires the three signals against the same OTLP/HTTP collector (SigNoz) with consistent resource attributes:
 
-## Visão Geral
+- **Traces** (`pkg/tracing`) — OTLP trace exporter, W3C propagation, Fiber middleware
+- **Logs** (`pkg/logging`) — structured logs (slog) mirrored to the OTLP log exporter, with trace context
+- **Metrics** (`pkg/metrics`) — global `MeterProvider` with a periodic OTLP reader
+- **MongoDB pool metrics** (`pkg/metrics/mongo`) — connection-pool monitors for mongo-driver v1 and v2
 
-Esta biblioteca simplifica a implementação do OpenTelemetry em aplicações Go, permitindo monitorar e rastrear o comportamento dos serviços em ambientes de produção. Inicialmente focada em medição de tempo de execução, agora oferece recursos completos de tracing e logging.
-
-## Recursos
-
-- **Tracing distribuído**: Rastreamento de requisições através de múltiplos serviços
-- **Logging estruturado**: Logs padronizados e estruturados com contexto de tracing
-- **Instrumentação HTTP**: Suporte para instrumentação automática de APIs HTTP (com middleware para Fiber)
-- **Exportação via REST API**: Envio de telemetria via protocolo HTTP/OTLP
-
-## Instalação
+## Install
 
 ```bash
 go get github.com/crewhu/observability_go
 ```
 
-Para usar uma versão específica:
-
-```bash
-go get github.com/crewhu/observability_go@v1.0.0
-```
-
-## Configuração
-
-### Variáveis de Ambiente Necessárias
-
-Para utilizar a biblioteca, configure as seguintes variáveis de ambiente:
-
-- `OTEL_PROJECT_NAME`: Nome do projeto/serviço (usado como Service.Name nos dados de telemetria)
-- `OTEL_ENDPOINT`: Endpoint do coletor OpenTelemetry (ex: "http://otel-collector:4318")
-
-### Configuração em Arquivos
-
-#### Desenvolvimento (.env)
-
-```
-OTEL_PROJECT_NAME=meu-servico
-OTEL_ENDPOINT=http://localhost:4318
-```
-
-#### Produção (oni.yaml)
-
-```yaml
-env:
-  - name: OTEL_PROJECT_NAME
-    value: meu-servico
-  - name: OTEL_ENDPOINT
-    value: http://otel-collector:4318
-```
-
-## Uso Básico
-
-### Inicialização no main.go
+## Quickstart
 
 ```go
 package main
@@ -63,147 +21,165 @@ package main
 import (
 	"context"
 	"os"
-	
-	logging "github.com/crewhu/observability_go/pkg/logging"
-	tracing "github.com/crewhu/observability_go/pkg/tracing"
-	"go.opentelemetry.io/otel"
+
+	"github.com/crewhu/observability_go/pkg/logging"
+	"github.com/crewhu/observability_go/pkg/observability"
 )
 
 func main() {
 	ctx := context.Background()
-	
-	// Inicialização do logging
+
 	logging.SetLoggingLevel(logging.LogLevelInfo)
-	logging.InitLoggerCollector(os.Getenv("OTEL_PROJECT_NAME"), os.Getenv("OTEL_ENDPOINT"))
-	
-	// Inicialização do tracing
-	traceProvider, err := tracing.NewTracer(os.Getenv("OTEL_PROJECT_NAME"), os.Getenv("OTEL_ENDPOINT"))
+
+	provider, err := observability.Init(ctx, observability.Config{
+		ServiceName: os.Getenv("OTEL_PROJECT_NAME"), // service.name
+		Endpoint:    os.Getenv("OTEL_ENDPOINT"),     // host:port, no scheme
+		Environment: os.Getenv("ENVIRONMENT"),       // deployment.environment
+	})
 	if err != nil {
-		logging.Error(ctx, "erro ao inicializar tracer: %v", err)
+		logging.Error(ctx, "failed to initialize observability: %v", err)
+		os.Exit(1)
 	}
-	defer traceProvider.Shutdown(ctx)
-	
-	// Configura o tracer global
-	otel.SetTracerProvider(traceProvider.GetProvider())
-	
-	// Resto da aplicação...
+	defer provider.Shutdown(ctx) // flushes traces, logs and metrics
+
+	// Rest of the application...
 }
 ```
 
-### Middleware para Fiber HTTP
+`Init` initializes the logger collector, the tracer and the meter provider, and registers the tracer and meter providers globally — no need to call `otel.SetTracerProvider` yourself anymore. On partial failure it shuts down whatever already started and returns the error. `Provider.Shutdown` flushes everything and joins shutdown errors with `errors.Join`.
 
-Para instrumentar automaticamente rotas HTTP com o framework Fiber:
+Optional `Config` fields (zero values keep the package defaults):
+
+| Field | Default |
+|---|---|
+| `ServiceVersion` | `0.1.0` |
+| `Environment` | attribute omitted |
+| `MetricsExportInterval` | `60s` |
+| `TraceExporterTimeout` | `500ms` |
+
+Underlying providers stay accessible via `provider.LoggerProvider()`, `provider.Tracer()`, `provider.TracerProvider()` and `provider.MeterProvider()`. The individual packages (`tracing.NewTracerWithOptions`, `logging.InitLoggerCollectorWithOptions`, `metrics.InitMeterProvider`) remain usable on their own.
+
+## Environment variable conventions
+
+| Variable | Meaning | Example |
+|---|---|---|
+| `OTEL_PROJECT_NAME` | Service name → `service.name` on every signal | `contact-api` |
+| `OTEL_ENDPOINT` | OTLP/HTTP collector address, `host:port` without scheme | `otel-collector:4318` |
+| `ENVIRONMENT` | Deployment environment → `deployment.environment` | `production` |
+
+## HTTP instrumentation (Fiber)
 
 ```go
-package http
-
 import (
-	"github.com/gofiber/fiber/v2"
 	"github.com/crewhu/observability_go/pkg/tracing/middleware"
+	"github.com/gofiber/fiber/v2"
 )
 
-func NewFiberHttp() *fiber.App {
-	app := fiber.New()
-	
-	// Adiciona middleware de tracing
-	app.Use(middleware.OtelMiddleware())
-	
-	// Configurações adicionais do Fiber...
-	
-	return app
-}
+app := fiber.New()
+app.Use(middleware.OtelMiddleware())
 ```
 
-### Registrando Logs
+## Logging
+
+```go
+import "github.com/crewhu/observability_go/pkg/logging"
+
+logging.Debug(ctx, "debug details: %s", detail)
+logging.Info(ctx, "operation completed")
+logging.Warn(ctx, "high resource usage")
+logging.Error(ctx, "failed to process request: %v", err)
+logging.Err(ctx, err) // logs the error with the error=true tag
+```
+
+Logs carry the active trace/span IDs from `ctx`, so SigNoz links them to the matching trace.
+
+## Manual spans
 
 ```go
 import (
-	"context"
-	logging "github.com/crewhu/observability_go/pkg/logging"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
-func minhaFuncao(ctx context.Context) {
-	// Diferentes níveis de log com contexto de tracing
-	logging.Debug(ctx, "Detalhes de debug: %s", "informação detalhada")
-	logging.Info(ctx, "Operação concluída com sucesso")
-	logging.Warn(ctx, "Atenção: recurso com utilização alta")
-	logging.Error(ctx, "Erro ao processar requisição: %v", err)
-}
+ctx, span := otel.Tracer("contact-api").Start(ctx, "ListContacts")
+defer span.End()
+span.SetAttributes(attribute.String("company_id", companyID))
 ```
 
-## Exemplos de uso do Tracing
+Name spans as `ResourceAction` (`UserLogin`, `ListContacts`). Use attributes for searchable values (entity IDs, statuses) and events (`span.AddEvent`) for milestones inside the span.
 
-### Criando spans, atributos e eventos
+## MongoDB instrumentation
+
+Two complementary monitors attach to the mongo client options:
+
+- **Command monitor** (contrib `otelmongo`) — one span per MongoDB command, with `db.system` and `db.name` attributes
+- **Pool monitor** (`pkg/metrics/mongo`) — connection-pool metrics through the global `MeterProvider`
+
+Call `observability.Init` (or `metrics.InitMeterProvider`) **before** constructing the monitors: instruments bind to the global meter provider at construction time.
+
+### Driver v1 (`go.mongodb.org/mongo-driver`)
 
 ```go
 import (
-    "context"
-    "github.com/crewhu/crewhu-trends-api/modules/analytics/src/infra/observability/tracing"
-    "go.opentelemetry.io/otel/attribute"
-    "go.opentelemetry.io/otel/trace"
+	mongometrics "github.com/crewhu/observability_go/pkg/metrics/mongo"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/mongo/otelmongo"
 )
 
-func exemploDeTracing(ctx context.Context, companyID, dataSourceID string) {
-    // Inicia um novo span
-    _, span := tracing.GetTracer("ListAvailableMetricsBySource").Start(ctx, "ListAvailableMetricsBySource")
-    defer span.End()
+opts := options.Client().
+	ApplyURI(uri).
+	SetMonitor(otelmongo.NewMonitor()). // command spans
+	SetPoolMonitor(mongometrics.NewPoolMonitor( // pool metrics
+		mongometrics.WithMaxPoolSize(100),
+		mongometrics.WithDatabaseName("crewhu"),
+	))
 
-    // Adiciona atributos ao span
-    span.SetAttributes(
-        attribute.String("company_id", companyID),
-        attribute.String("data_source_id", dataSourceID),
-    )
-
-    // Adiciona um evento ao span
-    span.AddEvent("metrics-found", trace.WithAttributes(
-        attribute.String("list", "[lista de métricas aqui]"),
-    ))
-
-    // ... lógica da função ...
-}
+client, err := mongo.Connect(ctx, opts)
 ```
 
-## Boas práticas para spans, atributos e eventos
+### Driver v2 (`go.mongodb.org/mongo-driver/v2`)
 
-### Nome dos Spans
-- Use nomes descritivos e consistentes, preferencialmente no padrão `RecursoAção` (ex: `UserLogin`, `ListAvailableMetricsBySource`).
-- O nome do span deve indicar claramente a operação ou endpoint monitorado.
-- Para handlers HTTP, utilize o nome do caso de uso ou do controller.
+```go
+import (
+	mongometrics "github.com/crewhu/observability_go/pkg/metrics/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo"
+)
 
-### Quando utilizar Atributos (`SetAttributes`)
-- Sempre que precisar registrar informações relevantes para análise e filtragem no trace.
-- Exemplos de atributos:
-  - IDs de entidades (`company_id`, `user_id`, `data_source_id`)
-  - Parâmetros de entrada relevantes
-  - Status ou resultado de operações
-- Prefira atributos para dados que mudam pouco durante o span e são úteis para busca/agrupamento.
+opts := options.Client().
+	ApplyURI(uri).
+	SetMonitor(otelmongo.NewMonitor()). // command spans
+	SetPoolMonitor(mongometrics.NewPoolMonitorV2( // pool metrics
+		mongometrics.WithMaxPoolSize(100),
+		mongometrics.WithDatabaseName("crewhu"),
+	))
 
-### Quando utilizar Eventos (`AddEvent`)
-- Use eventos para registrar fatos importantes ou marcos dentro do span.
-- Exemplos:
-  - Resultado de uma consulta ou processamento (`metrics-found`, `validation-error`)
-  - Mudanças de estado relevantes
-  - Erros ou exceções capturadas durante a execução
-- Eventos são ideais para registrar informações pontuais e detalhadas, que ajudam a entender o fluxo do span.
+client, err := mongo.Connect(opts)
+```
 
-## Exemplo Completo de Integração
+### Emitted pool metrics
 
-Veja um exemplo real de integração no repositório [crewhu-trends-api PR #323](https://github.com/crewhu/crewhu-trends-api/pull/323).
+All instruments follow OTel semantic conventions (`db.client.connection.*`) and carry `db.system=mongodb`, `db.client.connection.pool.name=<server address>` and, when `WithDatabaseName` is set, `db.name`.
 
-## Versionamento
+| Metric | Type | Unit | Description |
+|---|---|---|---|
+| `db.client.connection.count` | UpDownCounter | `{connection}` | Open connections, split by `db.client.connection.state` (`idle` / `used`) |
+| `db.client.connection.max` | Gauge | `{connection}` | Maximum allowed pool size (from `WithMaxPoolSize` or the driver's pool options) |
+| `db.client.connection.pending_requests` | UpDownCounter | `{request}` | Checkout requests waiting for a connection |
+| `db.client.connection.timeouts` | Counter | `{timeout}` | Checkouts that failed with a timeout |
+| `db.client.connection.create_time` | Histogram | `s` | Time to establish a new connection |
+| `db.client.connection.wait_time` | Histogram | `s` | Time waiting to obtain a connection from the pool |
+| `db.client.connection.created` | Counter | `{connection}` | Connections created (supplementary: churn rate) |
+| `db.client.connection.closed` | Counter | `{connection}` | Connections closed, by `reason` (supplementary: churn rate) |
 
-Este projeto segue [Versionamento Semântico 2.0.0](https://semver.org/lang/pt-BR/):
+### How telemetry is segregated in SigNoz
 
-- **MAJOR**: Alterações incompatíveis com versões anteriores
-- **MINOR**: Adição de funcionalidades mantendo compatibilidade
-- **PATCH**: Correções de bugs mantendo compatibilidade
+- **`service.name`** (from `Config.ServiceName` / `OTEL_PROJECT_NAME`) is the resource attribute on every span, log and metric — it is what splits telemetry per service in the SigNoz Services and Dashboards views.
+- **`db.system=mongodb`** marks spans/metrics as MongoDB traffic, so database panels can filter out HTTP and other instrumentation.
+- **`db.name`** identifies the logical database. The pool monitor emits the same `db.name` attribute as the `otelmongo` command spans, so one `service.name × db.name` group-by correlates command latency with pool saturation for the same database.
 
-Para mais informações sobre o processo de versionamento, consulte o [guia de versionamento](./docs/guides/versioning.md).
+## Versioning and releases
 
-## Release Automatizada
-
-A biblioteca implementa um processo de CI/CD que analisa as mensagens de commit para determinar automaticamente o tipo de versão a ser lançada:
-
-- `feat(major):` ou mensagens com `BREAKING CHANGE` incrementam a versão MAJOR
-- `feat:` incrementa a versão MINOR
-- Outros tipos (`fix`, `docs`, etc.) incrementam a versão PATCH
+The project follows [Semantic Versioning 2.0.0](https://semver.org/). CI derives the release type from commit messages: `feat(major):` / `BREAKING CHANGE` → MAJOR, `feat:` → MINOR, anything else (`fix:`, `docs:`, ...) → PATCH. See [docs/guides/versioning.md](./docs/guides/versioning.md) and [docs/guides/auto-release.md](./docs/guides/auto-release.md).
