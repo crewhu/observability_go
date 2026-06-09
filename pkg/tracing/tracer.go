@@ -5,13 +5,52 @@ import (
 	"fmt"
 	"time"
 
+	obsresource "github.com/crewhu/observability_go/pkg/resource"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
+
+// DefaultExporterTimeout is the OTLP trace exporter timeout applied when
+// no override is provided. It matches the value historically hardcoded
+// by this package.
+const DefaultExporterTimeout = 500 * time.Millisecond
+
+type config struct {
+	serviceVersion  string
+	environment     string
+	exporterTimeout time.Duration
+}
+
+// Option customizes the tracer created by NewTracerWithOptions.
+type Option func(*config)
+
+// WithServiceVersion sets the service.version resource attribute
+// (default "0.1.0").
+func WithServiceVersion(version string) Option {
+	return func(c *config) {
+		c.serviceVersion = version
+	}
+}
+
+// WithEnvironment sets the deployment.environment resource attribute.
+// When empty, the attribute is omitted.
+func WithEnvironment(environment string) Option {
+	return func(c *config) {
+		c.environment = environment
+	}
+}
+
+// WithExporterTimeout overrides the OTLP exporter timeout
+// (default 500ms). Non-positive values keep the default.
+func WithExporterTimeout(timeout time.Duration) Option {
+	return func(c *config) {
+		if timeout > 0 {
+			c.exporterTimeout = timeout
+		}
+	}
+}
 
 type Tracer struct {
 	provider *sdktrace.TracerProvider
@@ -20,7 +59,22 @@ type Tracer struct {
 }
 
 func NewTracer(name, endpoint string) (*Tracer, error) {
-	provider, err := initTracer(name, endpoint)
+	return NewTracerWithOptions(name, endpoint)
+}
+
+// NewTracerWithOptions creates a Tracer like NewTracer, additionally
+// accepting options for the service version, deployment environment and
+// OTLP exporter timeout.
+func NewTracerWithOptions(name, endpoint string, opts ...Option) (*Tracer, error) {
+	cfg := config{
+		serviceVersion:  obsresource.DefaultServiceVersion,
+		exporterTimeout: DefaultExporterTimeout,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	provider, err := initTracer(name, endpoint, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize tracer: %w", err)
 	}
@@ -40,27 +94,21 @@ func (t *Tracer) GetProvider() *sdktrace.TracerProvider {
 	return t.provider
 }
 
-func initTracer(name, endpoint string) (*sdktrace.TracerProvider, error) {
+func initTracer(name, endpoint string, cfg config) (*sdktrace.TracerProvider, error) {
 	exporter, err := otlptracehttp.New(
 		context.Background(),
 		otlptracehttp.WithEndpoint(endpoint),
 		otlptracehttp.WithInsecure(),
-		otlptracehttp.WithTimeout(500*time.Millisecond),
+		otlptracehttp.WithTimeout(cfg.exporterTimeout),
 	)
 
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := resource.New(
-		context.Background(),
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(name),
-			semconv.ServiceVersionKey.String("0.1.0"),
-		),
-	)
+	res, err := obsresource.New(name, cfg.serviceVersion, cfg.environment)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create the resource: %w", err)
+		return nil, err
 	}
 
 	bsp := sdktrace.NewBatchSpanProcessor(exporter)
