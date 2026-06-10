@@ -106,13 +106,36 @@ type poolEvent struct {
 	maxPoolSize uint64 // from PoolOptions on ConnectionPoolCreated, 0 when absent
 }
 
-// poolAttrs caches the pre-computed attribute sets for one pool
-// (one server address), avoiding per-event allocations on the hot
-// checkout path.
+// poolAttrs caches, per pool (one server address), the fully built
+// measurement options so the hot checkout path does zero allocations:
+// WithAttributeSet boxes its option struct into an interface and every
+// variadic Add/Record call allocates a fresh slice, so both are done
+// once here instead of on every event.
 type poolAttrs struct {
-	base attribute.Set // db.system [+ db.name] + pool.name
-	idle attribute.Set // base + state=idle
-	used attribute.Set // base + state=used
+	baseAdd    []metric.AddOption    // db.system [+ db.name] + pool.name
+	idleAdd    []metric.AddOption    // base + state=idle
+	usedAdd    []metric.AddOption    // base + state=used
+	baseRecord []metric.RecordOption // same set as baseAdd
+
+	baseKVs []attribute.KeyValue // source attrs for lazy closed sets
+
+	mu             sync.Mutex
+	closedByReason map[string][]metric.AddOption // base + reason, built lazily
+}
+
+// closedOpts returns the pre-merged base+reason options for the closed
+// counter, building them on first sight of a reason. Reasons are a
+// small bounded set (six known driver values), so the map stays tiny.
+func (pa *poolAttrs) closedOpts(reason string) []metric.AddOption {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
+	opts, ok := pa.closedByReason[reason]
+	if !ok {
+		kvs := append(pa.baseKVs[:len(pa.baseKVs):len(pa.baseKVs)], closeReasonKey.String(reason))
+		opts = []metric.AddOption{metric.WithAttributeSet(attribute.NewSet(kvs...))}
+		pa.closedByReason[reason] = opts
+	}
+	return opts
 }
 
 // recorder owns the OTel instruments and the event→measurement
@@ -249,10 +272,17 @@ func (r *recorder) attrsFor(address string) *poolAttrs {
 	base = append(base, r.baseAttrs...)
 	base = append(base, semconv130.DBClientConnectionPoolName(address))
 
+	baseSet := metric.WithAttributeSet(attribute.NewSet(base[:len(base):len(base)]...))
+	idleSet := metric.WithAttributeSet(attribute.NewSet(append(base[:len(base):len(base)], semconv130.DBClientConnectionStateIdle)...))
+	usedSet := metric.WithAttributeSet(attribute.NewSet(append(base[:len(base):len(base)], semconv130.DBClientConnectionStateUsed)...))
+
 	pa = &poolAttrs{
-		base: attribute.NewSet(base...),
-		idle: attribute.NewSet(append(base[:len(base):len(base)], semconv130.DBClientConnectionStateIdle)...),
-		used: attribute.NewSet(append(base[:len(base):len(base)], semconv130.DBClientConnectionStateUsed)...),
+		baseAdd:        []metric.AddOption{baseSet},
+		idleAdd:        []metric.AddOption{idleSet},
+		usedAdd:        []metric.AddOption{usedSet},
+		baseRecord:     []metric.RecordOption{baseSet},
+		baseKVs:        base,
+		closedByReason: make(map[string][]metric.AddOption),
 	}
 	r.pools[address] = pa
 	return pa
@@ -263,9 +293,6 @@ func (r *recorder) attrsFor(address string) *poolAttrs {
 func (r *recorder) handle(ev poolEvent) {
 	ctx := context.Background()
 	pa := r.attrsFor(ev.address)
-	base := metric.WithAttributeSet(pa.base)
-	idle := metric.WithAttributeSet(pa.idle)
-	used := metric.WithAttributeSet(pa.used)
 
 	switch ev.eventType {
 	case typePoolCreated:
@@ -276,40 +303,40 @@ func (r *recorder) handle(ev poolEvent) {
 			maxConns = ev.maxPoolSize
 		}
 		if maxConns > 0 {
-			r.connMax.Record(ctx, int64(maxConns), base)
+			r.connMax.Record(ctx, int64(maxConns), pa.baseRecord...)
 		}
 
 	case typeConnectionCreated:
-		r.created.Add(ctx, 1, base)
-		r.connCount.Add(ctx, 1, idle)
+		r.created.Add(ctx, 1, pa.baseAdd...)
+		r.connCount.Add(ctx, 1, pa.idleAdd...)
 
 	case typeConnectionReady:
 		if ev.duration > 0 {
-			r.createTime.Record(ctx, ev.duration.Seconds(), base)
+			r.createTime.Record(ctx, ev.duration.Seconds(), pa.baseRecord...)
 		}
 
 	case typeConnectionClosed:
-		r.closed.Add(ctx, 1, base, metric.WithAttributes(closeReasonKey.String(ev.reason)))
-		r.connCount.Add(ctx, -1, idle)
+		r.closed.Add(ctx, 1, pa.closedOpts(ev.reason)...)
+		r.connCount.Add(ctx, -1, pa.idleAdd...)
 
 	case typeCheckOutStarted:
-		r.pendingRequests.Add(ctx, 1, base)
+		r.pendingRequests.Add(ctx, 1, pa.baseAdd...)
 
 	case typeCheckedOut:
-		r.pendingRequests.Add(ctx, -1, base)
-		r.connCount.Add(ctx, 1, used)
-		r.connCount.Add(ctx, -1, idle)
-		r.waitTime.Record(ctx, ev.duration.Seconds(), base)
+		r.pendingRequests.Add(ctx, -1, pa.baseAdd...)
+		r.connCount.Add(ctx, 1, pa.usedAdd...)
+		r.connCount.Add(ctx, -1, pa.idleAdd...)
+		r.waitTime.Record(ctx, ev.duration.Seconds(), pa.baseRecord...)
 
 	case typeCheckOutFailed:
-		r.pendingRequests.Add(ctx, -1, base)
+		r.pendingRequests.Add(ctx, -1, pa.baseAdd...)
 		if ev.reason == reasonTimedOut {
-			r.timeouts.Add(ctx, 1, base)
+			r.timeouts.Add(ctx, 1, pa.baseAdd...)
 		}
 
 	case typeCheckedIn:
-		r.connCount.Add(ctx, -1, used)
-		r.connCount.Add(ctx, 1, idle)
+		r.connCount.Add(ctx, -1, pa.usedAdd...)
+		r.connCount.Add(ctx, 1, pa.idleAdd...)
 	}
 }
 
