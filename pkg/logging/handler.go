@@ -71,7 +71,7 @@ func GetOtelLoggerFromContext(ctx context.Context, extra Tags) otellog.Record {
 			Key:   "span_id",
 			Value: otellog.StringValue(traceInfo.SpanID),
 		})
-	} 
+	}
 
 	tags := mergeCtxTags(ctx, extra)
 	if len(tags) > 0 {
