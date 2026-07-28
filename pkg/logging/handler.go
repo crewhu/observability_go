@@ -28,7 +28,13 @@ func ConfigureLoggerWithWriter(w io.Writer, level LogLevel) {
 	slog.SetDefault(logger)
 }
 
-func GetLoggerFromContext(ctx context.Context) *slog.Logger {
+// GetLoggerFromContext returns a logger carrying the ctx-accumulated tags
+// merged with extra (call-site Tags win on a key collision). Both must be
+// folded into a single Tags map before the *one* With() call below: slog
+// doesn't dedupe attributes by key, so applying ctx tags and extra as two
+// separate With() calls would emit a colliding key twice instead of letting
+// the call-site value override it.
+func GetLoggerFromContext(ctx context.Context, extra Tags) *slog.Logger {
 	traceInfo := ExtractTraceInfo(ctx)
 
 	loggerWithTrace := logger
@@ -39,10 +45,10 @@ func GetLoggerFromContext(ctx context.Context) *slog.Logger {
 		)
 	}
 
-	ctxTags := getTags(ctx)
-	if len(ctxTags) > 0 {
-		attrs := make([]any, 0, len(ctxTags)*2)
-		for k, v := range ctxTags {
+	tags := mergeCtxTags(ctx, extra)
+	if len(tags) > 0 {
+		attrs := make([]any, 0, len(tags)*2)
+		for k, v := range tags {
 			attrs = append(attrs, slog.Any(k, v))
 		}
 		loggerWithTrace = loggerWithTrace.With(attrs...)
@@ -51,7 +57,9 @@ func GetLoggerFromContext(ctx context.Context) *slog.Logger {
 	return loggerWithTrace
 }
 
-func GetOtelLoggerFromContext(ctx context.Context) otellog.Record {
+// GetOtelLoggerFromContext mirrors GetLoggerFromContext's merge-before-emit
+// rule for the otel Record: AddAttributes doesn't dedupe by key either.
+func GetOtelLoggerFromContext(ctx context.Context, extra Tags) otellog.Record {
 	traceInfo := ExtractTraceInfo(ctx)
 	otelRecord := otellog.Record{}
 
@@ -63,11 +71,11 @@ func GetOtelLoggerFromContext(ctx context.Context) otellog.Record {
 			Key:   "span_id",
 			Value: otellog.StringValue(traceInfo.SpanID),
 		})
-	}
+	} 
 
-	ctxTags := getTags(ctx)
-	if len(ctxTags) > 0 {
-		for k, v := range ctxTags {
+	tags := mergeCtxTags(ctx, extra)
+	if len(tags) > 0 {
+		for k, v := range tags {
 			otelRecord.AddAttributes(otellog.KeyValue{
 				Key:   k,
 				Value: otellog.StringValue(fmt.Sprintf("%v", v)),
