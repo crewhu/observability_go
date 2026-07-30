@@ -72,7 +72,6 @@ func SetLoggingLevel(level LogLevel) {
 func Log(ctx context.Context, level LogLevel, msg string, opts ...any) {
 	args := []any{}
 	tags := Tags{}
-	maps.Copy(tags, getTags(ctx))
 	for _, opt := range opts {
 		switch opt := opt.(type) {
 		case Tags:
@@ -101,23 +100,27 @@ func Error(ctx context.Context, msg string, opts ...any) {
 }
 
 func printf(ctx context.Context, app string, level LogLevel, t Tags, msg string, v ...any) {
-	ctxLogger := GetLoggerFromContext(ctx)
+	// t holds only call-site Tags (logging.Info(ctx, msg, logging.Tags{...})).
+	// GetLoggerFromContext merges it with the ctx tags itself and applies the
+	// result in one With() call — see its doc comment for why a second,
+	// independent With() here would double-emit any colliding key.
+	ctxLogger := GetLoggerFromContext(ctx, t)
 
 	formattedMsg := msg
 	if len(v) > 0 {
 		formattedMsg = fmt.Sprintf(msg, v...)
 	}
 
-	ctxLogger.LogAttrs(ctx, slog.Level(level), fmt.Sprintf("%s", formattedMsg))
-	otelPrintf(ctx, level, formattedMsg)
+	ctxLogger.LogAttrs(ctx, slog.Level(level), formattedMsg)
+	otelPrintf(ctx, level, formattedMsg, t)
 }
 
-func otelPrintf(ctx context.Context, level LogLevel, msg string) {
+func otelPrintf(ctx context.Context, level LogLevel, msg string, t Tags) {
 	if otelLogger == nil {
 		return
 	}
 
-	otelRecord := GetOtelLoggerFromContext(ctx)
+	otelRecord := GetOtelLoggerFromContext(ctx, t)
 	otelRecord.SetBody(otellog.StringValue(msg))
 	otelRecord.SetSeverity(level.OtelString())
 	otelLogger.Emit(ctx, otelRecord)
@@ -125,7 +128,6 @@ func otelPrintf(ctx context.Context, level LogLevel, msg string) {
 
 func Err(ctx context.Context, err error, tags ...Tags) {
 	t := Tags{}
-	maps.Copy(t, getTags(ctx))
 	for _, tag := range tags {
 		t = t.Merge(tag)
 	}
